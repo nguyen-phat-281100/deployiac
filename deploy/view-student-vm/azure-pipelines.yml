@@ -1,0 +1,73 @@
+trigger: none
+
+pool: Default 
+
+variables:
+  resourceGroupName: 'viewstudenttestrg'
+  resourceGroupLocation: 'Australia East'
+  vmNameValidate: 'photovmvalidate'
+  vmNameProduction: 'photovmprod'
+  storageAccVmValidate: 'storageaccvmvalidate'
+  storageAccVmProduction: 'storageaccvmproduction'
+  vmAdminUsernameValidate: 'anhledev97_val'
+  vmAdminUsernameProduction: 'anhledev97'
+  vmAdminPasswordValidate: '0001_anhledev97_val'
+  vmAdminPasswordProduction: '0001_anhledev97'
+  azureResourceManagerConnection: 'Azure subscription 1(39e82e92-e9af-4a28-95dc-268d47637e28)'
+  subscriptionId: '39e82e92-e9af-4a28-95dc-268d47637e28'
+  azureSubscription: 'Azure subscription 1(39e82e92-e9af-4a28-95dc-268d47637e28)'
+
+stages:
+
+- stage: Lint
+  jobs:
+  - job: LintCode
+    displayName: Lint code
+    steps:
+      - script: |
+          az bicep upgrade
+          az bicep restore --force
+          az bicep build --file deploy/view-student-vm/main.bicep
+        name: LintBicepCode
+        displayName: Run Bicep linter
+
+- stage: Validation
+  jobs:
+  - job: ValidateBicepCode
+    displayName: Validate Bicep code
+    steps:
+      - task: AzureResourceManagerTemplateDeployment@3
+        name: RunPreflightValidation
+        displayName: Run preflight validation
+        inputs:
+          azureResourceManagerConnection: $(azureResourceManagerConnection)
+          subscriptionId: $(subscriptionId)
+          location: $(resourceGroupLocation)
+          deploymentMode: Validation
+          resourceGroupName: $(resourceGroupName)
+          csmFile: deploy/view-student-vm/main.bicep
+          overrideParameters: '-vmName "$(vmNameValidate)" -location "$(resourceGroupLocation)" -adminUsername "$(vmAdminUsernameValidate)" -adminPassword "$(vmAdminPasswordValidate)" -storageAccountName "$(storageAccVmValidate)"'
+
+- stage: Deployment_Production
+  displayName: Production
+  jobs:
+    - deployment: Production
+      displayName: Production
+      pool: Default
+      environment: 'ViewStudent VM Production'
+      continueOnError: true
+      strategy:
+        runOnce:
+          deploy:
+            steps:              
+              - task: AzureResourceManagerTemplateDeployment@3
+                name: DeployBicepFile
+                displayName: Deploy Bicep file
+                inputs:
+                  azureResourceManagerConnection: $(azureResourceManagerConnection)
+                  subscriptionId: $(subscriptionId)
+                  deploymentName: $(Build.BuildNumber)
+                  location: $(resourceGroupLocation)
+                  resourceGroupName: $(resourceGroupName)
+                  csmFile: deploy/view-student-vm/main.bicep
+                  overrideParameters: '-vmName "$(vmNameProduction)" -location "$(resourceGroupLocation)" -adminUsername "$(vmAdminUsernameProduction)" -adminPassword "$(vmAdminPasswordProduction)" -storageAccountName "$(storageAccVmProduction)"'
